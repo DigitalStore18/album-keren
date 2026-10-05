@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Preparar las fotos del álbum</title>
+    <style>
+        body { font: 16px/1.55 system-ui, sans-serif; max-width: 740px; margin: 40px auto; padding: 0 16px; background: #14101a; color: #eee; }
+        code { background: #2a2233; padding: 1px 6px; border-radius: 4px; }
+        textarea { width: 100%; height: 150px; background: #0c0910; color: #d7c4f0; border: 1px solid #443; border-radius: 8px; padding: 10px; font: 13px/1.4 monospace; }
+        button { padding: 10px 20px; border: 0; border-radius: 99px; background: #cd9cf2; color: #1a1124; font-size: 15px; cursor: pointer; }
+        button:disabled { opacity: .45; cursor: default; }
+        progress { width: 100%; }
+        input { width: 80px; padding: 6px; border-radius: 6px; border: 1px solid #554; background: #0c0910; color: #eee; }
+        .row { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+        h2 { margin-top: 32px; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+    <h1>Preparar las fotos del álbum</h1>
+    <p>Deja este archivo en la misma carpeta que <code>index.html</code> (junto a la carpeta <code>fotos</code>), ábrelo en el navegador y pulsa <b>Empezar</b>. En una sola pasada mide las fotos y crea versiones livianas para que el álbum cargue rápido.</p>
+
+    <div class="row">
+        <label>Fotos: <input id="total" type="number" value="111" min="1"></label>
+        <label>Lado mayor (px): <input id="max" type="number" value="900" min="400"></label>
+        <label>Calidad (0.5–0.95): <input id="q" type="number" value="0.78" step="0.05" min="0.5" max="0.95"></label>
+        <button id="go">Empezar</button>
+    </div>
+    <p><progress id="bar" value="0" max="1"></progress><br><span id="msg"></span></p>
+
+    <h2>1. Miniaturas</h2>
+    <p><button id="zip" disabled>Descargar mini.zip</button></p>
+    <p>Extrae el zip <b>dentro de la carpeta <code>fotos</code></b>: debe quedar <code>fotos/mini/01.jpg</code>, <code>fotos/mini/02.jpg</code>… Las páginas usarán estas versiones y la foto original solo se descarga al ampliar.</p>
+
+    <h2>2. Proporciones</h2>
+    <textarea id="out" readonly placeholder="Aquí aparecerá la línea para script.js"></textarea>
+    <p><button id="copy">Copiar</button></p>
+    <p>En <code>script.js</code>, reemplaza la línea <code>const RATIOS = null;</code> por la línea copiada. Así el álbum abre al instante, sin medir las fotos.</p>
+
+    <script>
+        const pad = n => String(n).padStart(2, "0");
+        const $ = id => document.getElementById(id);
+        let zipBlob = null, blocked = false;
+
+        /* ---- ZIP sin compresión (los JPG ya vienen comprimidos) ---- */
+        const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+        const crc32 = buf => { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC[(c ^ buf[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+        function makeZip(files) {
+            const enc = new TextEncoder(), parts = [], central = [];
+            let offset = 0, cdSize = 0;
+            for (const f of files) {
+                const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+                const lh = new DataView(new ArrayBuffer(30));
+                lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+                lh.setUint16(12, 0x21, true); lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true);
+                lh.setUint16(26, name.length, true);
+                parts.push(lh, name, f.data);
+                const ch = new DataView(new ArrayBuffer(46));
+                ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+                ch.setUint16(14, 0x21, true); ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true);
+                ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
+                central.push(ch, name);
+                cdSize += 46 + name.length;
+                offset += 30 + name.length + size;
+            }
+            const end = new DataView(new ArrayBuffer(22));
+            end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+            end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+            return new Blob([...parts, ...central, end], { type: "application/zip" });
+        }
+
+        $("go").onclick = async () => {
+            const total = Math.max(1, parseInt($("total").value, 10) || 111);
+            const maxSide = Math.max(400, parseInt($("max").value, 10) || 1100);
+            const quality = Math.min(0.95, Math.max(0.5, parseFloat($("q").value) || 0.78));
+            const ratios = new Array(total).fill(0), files = new Array(total).fill(null);
+            let next = 0, done = 0, bytes = 0;
+            $("go").disabled = true; $("zip").disabled = true; zipBlob = null; blocked = false;
+            $("out").value = "";
+            $("bar").max = total; $("bar").value = 0;
+
+            const worker = async () => {
+                while (next < total) {
+                    const n = ++next;
+                    await new Promise(res => {
+                        const im = new Image();
+                        im.onload = async () => {
+                            try {
+                                const w = im.naturalWidth, h = im.naturalHeight;
+                                if (h) {
+                                    ratios[n - 1] = +(w / h).toFixed(3);
+                                    const k = Math.min(1, maxSide / Math.max(w, h));
+                                    const cv = document.createElement("canvas");
+                                    cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+                                    cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+                                    const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", quality));
+                                    if (blob) {
+                                        const data = new Uint8Array(await blob.arrayBuffer());
+                                        files[n - 1] = { name: `mini/${pad(n)}.jpg`, data };
+                                        bytes += data.length;
+                                    }
+                                }
+                            } catch (_) { blocked = true; }
+                            res();
+                        };
+                        im.onerror = res;
+                        im.src = `fotos/${pad(n)}.jpg`;
+                    });
+                    $("bar").value = ++done;
+                    $("msg").textContent = `${done} / ${total}`;
+                }
+            };
+            await Promise.all(Array.from({ length: 3 }, worker));
+
+            const failed = ratios.map((x, i) => x ? 0 : i + 1).filter(Boolean);
+            $("out").value = `const RATIOS = [${ratios.map(x => x || 1.5).join(", ")}];`;
+            const ok = files.filter(Boolean);
+            if (ok.length) { zipBlob = makeZip(ok); $("zip").disabled = false; }
+            $("msg").textContent = (failed.length
+                ? `Terminó, pero estas fotos no cargaron (se usó 3:2): ${failed.map(pad).join(", ")}. `
+                : "Listo. ")
+                + (ok.length ? `Miniaturas: ${ok.length} fotos, ${(bytes / 1048576).toFixed(1)} MB en total.` : "")
+                + (!ok.length && blocked ? " No se pudieron crear las miniaturas: el navegador lo bloquea cuando este archivo se abre directo desde la carpeta (file://). Ábrelo desde un servidor local: en la carpeta del álbum ejecuta «python3 -m http.server» y entra a http://localhost:8000/medir.html (o usa la extensión Live Server de VS Code, o súbelo a tu hosting y ábrelo desde ahí)." : "");
+            $("go").disabled = false;
+        };
+
+        $("zip").onclick = () => {
+            if (!zipBlob) return;
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(zipBlob); a.download = "mini.zip";
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        };
+
+        $("copy").onclick = async () => {
+            const t = $("out");
+            if (!t.value) return;
+            try { await navigator.clipboard.writeText(t.value); }
+            catch (_) { t.select(); document.execCommand("copy"); }
+            $("copy").textContent = "¡Copiado!";
+            setTimeout(() => $("copy").textContent = "Copiar", 1500);
+        };
+    </script>
+</body>
+</html>
