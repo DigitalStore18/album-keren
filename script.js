@@ -25,7 +25,7 @@
     // Proporción (ancho ÷ alto) de las fotos 01…111, para armar cada página sin recortar nada.
     // Si está en null se miden al abrir el álbum (tarda un poco la primera vez).
     // Para evitar esa espera: abre medir.html, copia la línea que genera y reemplaza esta.
-    const RATIOS = null;
+    const RATIOS = [1.5, 1, 1, 1, 1.237, 1.051, 1, 1, 1.303, 0.8, 0.945, 1.407, 1.232, 1.166, 0.667, 0.731, 0.778, 1.5, 1.317, 0.715, 1.169, 1.383, 1.5, 1.406, 1.27, 1.151, 1.151, 1.189, 1.5, 1.502, 1.457, 0.648, 1.588, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 0.719, 0.79, 1.329, 1.095, 1.379, 1.306, 1.231, 1.326, 1.308, 1.356, 1.419, 1.5, 1.5, 1.319, 1.647, 1.468, 1.209, 0.754, 0.754, 1.412, 1.434, 1.5, 1.5, 1.152, 1.5, 1.5, 1.5, 1.5, 1.266, 1.374, 1.5, 1.5, 1.414, 1.447, 1.447, 1.5, 1.5, 1.5, 1.391, 1.278, 1.5, 1.5, 1.033, 0.65, 1.481, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.069, 1.331, 1.468, 1.453, 0.656, 0.751, 0.803, 0.953, 0.918, 0.802, 0.76, 1.02, 0.812, 1.5, 0.732, 0.854, 0.791];
     const CAPS = ["Diez años, diez velitas", "Risas que se quedan", "Un día para recordar", "Cada foto, un abrazo", "Gracias por tanto"];
     const EGGS = [
         "Un deseo escondido: que nunca dejes de reír así.",
