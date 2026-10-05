@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Medir las fotos del álbum</title>
+    <style>
+        body { font: 16px/1.55 system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; background: #14101a; color: #eee; }
+        code { background: #2a2233; padding: 1px 6px; border-radius: 4px; }
+        textarea { width: 100%; height: 220px; background: #0c0910; color: #d7c4f0; border: 1px solid #443; border-radius: 8px; padding: 10px; font: 13px/1.4 monospace; }
+        button { padding: 10px 20px; border: 0; border-radius: 99px; background: #cd9cf2; color: #1a1124; font-size: 15px; cursor: pointer; }
+        progress { width: 100%; }
+        input { width: 80px; padding: 6px; border-radius: 6px; border: 1px solid #554; background: #0c0910; color: #eee; }
+    </style>
+</head>
+<body>
+    <h1>Medir las fotos del álbum</h1>
+    <p>Deja este archivo en la misma carpeta que <code>index.html</code> (junto a la carpeta <code>fotos</code>), ábrelo en el navegador y pulsa <b>Medir</b>.</p>
+    <p>Cantidad de fotos: <input id="total" type="number" value="111" min="1"> <button id="go">Medir</button></p>
+    <p><progress id="bar" value="0" max="1"></progress><br><span id="msg"></span></p>
+    <textarea id="out" readonly placeholder="Aquí aparecerá la línea para script.js"></textarea>
+    <p><button id="copy">Copiar</button></p>
+    <p>Después, en <code>script.js</code>, reemplaza la línea <code>const RATIOS = null;</code> por la línea copiada. Así el álbum abre al instante, sin medir las fotos.</p>
+
+    <script>
+        const pad = n => String(n).padStart(2, "0");
+        const $ = id => document.getElementById(id);
+
+        $("go").onclick = async () => {
+            const total = Math.max(1, parseInt($("total").value, 10) || 111);
+            const out = new Array(total).fill(0);
+            let next = 0, done = 0;
+            $("go").disabled = true;
+            $("out").value = "";
+            $("bar").max = total; $("bar").value = 0;
+
+            const worker = async () => {
+                while (next < total) {
+                    const n = ++next;
+                    await new Promise(res => {
+                        const im = new Image();
+                        im.onload = () => { if (im.naturalHeight) out[n - 1] = +(im.naturalWidth / im.naturalHeight).toFixed(3); res(); };
+                        im.onerror = res;
+                        im.src = `fotos/${pad(n)}.jpg`;
+                    });
+                    $("bar").value = ++done;
+                    $("msg").textContent = `${done} / ${total}`;
+                }
+            };
+            await Promise.all(Array.from({ length: 6 }, worker));
+
+            const failed = out.map((x, i) => x ? 0 : i + 1).filter(Boolean);
+            const line = `const RATIOS = [${out.map(x => x || 1.5).join(", ")}];`;
+            $("out").value = line;
+            $("msg").textContent = failed.length
+                ? `Terminó, pero estas fotos no cargaron (se usó 3:2): ${failed.map(pad).join(", ")}`
+                : "Listo: todas las fotos medidas.";
+            $("go").disabled = false;
+        };
+
+        $("copy").onclick = async () => {
+            const t = $("out");
+            if (!t.value) return;
+            try { await navigator.clipboard.writeText(t.value); }
+            catch (_) { t.select(); document.execCommand("copy"); }
+            $("copy").textContent = "¡Copiado!";
+            setTimeout(() => $("copy").textContent = "Copiar", 1500);
+        };
+    </script>
+</body>
+</html>
